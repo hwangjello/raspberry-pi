@@ -1,0 +1,44 @@
+import paho.mqtt.client as mqtt
+import RPi.GPIO as GPIO
+
+# GPIO 설정
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(17, GPIO.OUT)
+
+# MQTT 메시지 수신 콜백 함수
+def on_message(client, userdata, message):
+    try:
+        temp = str(message.payload.decode("utf-8"))
+        print(f"Received message: {temp} on topic: {message.topic}")
+        if temp == "1":
+            GPIO.output(17, True)
+            print("LED ON")
+        elif temp == "0":
+            GPIO.output(17, False)
+            print("LED OFF")
+        else:
+            print("Invalid message: " + temp)
+    except Exception as e:
+        print(f"Error: {e}")
+
+def on_connect(client, userdata, flags, rc):
+    print("Connected with result code " + str(rc))
+    client.subscribe("topic")
+    print("Subscribed to topic")
+
+def on_disconnect(client, userdata, rc):
+    print("Disconnected with result code " + str(rc))
+
+client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
+client.on_disconnect = on_disconnect
+
+# MQTT 브로커에 연결
+try:
+    client.connect("broker.emqx.io", 1883, 60)
+except Exception as e:
+    print(f"Could not connect to MQTT broker: {e}")
+    exit(1)
+
+client.loop_forever()
