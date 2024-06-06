@@ -1,0 +1,91 @@
+import time
+import paho.mqtt.client as mqtt
+import RPi.GPIO as GPIO
+
+# 초음파 센서 설정
+GPIO.setmode(GPIO.BCM)
+GPIO_TRIGGER = 23
+GPIO_ECHO = 24
+GPIO.setup(GPIO_TRIGGER, GPIO.OUT)
+GPIO.setup(GPIO_ECHO, GPIO.IN)
+GPIO.output(GPIO_TRIGGER, False)
+
+# MQTT 설정
+MQTT_BROKER = "your_broker_address"  # 브로커 주소
+MQTT_PORT = 1883  # 브로커 포트 (기본값 1883)
+MQTT_TOPIC = "smartphone/personal_id"
+
+# 측정 데이터 저장을 위한 딕셔너리
+height_data = {}
+
+measuring = False
+
+# MQTT 클라이언트 콜백 함수
+def on_connect(client, userdata, flags, rc):
+    print("Connected with result code " + str(rc))
+    client.subscribe(MQTT_TOPIC)
+
+def on_message(client, userdata, msg):
+    global measuring
+    personal_id = msg.payload.decode()
+    print(f"Received personal ID: {personal_id}")
+    
+    if personal_id in height_data:
+        print(f"Stored height for {personal_id}: {height_data[personal_id]:.2f} cm")
+    else:
+        measuring = True
+        while measuring:
+            height = measure_height()
+            if height is not None:
+                height_data[personal_id] = height
+                print(f"Measured and stored height for {personal_id}: {height:.2f} cm")
+                measuring = False  # 측정 성공 시 루프 정지
+            else:
+                print("Failed to measure height consistently. Retrying...")
+                time.sleep(1)  # 재시도 전 잠시 대기
+
+def measure():
+    GPIO.output(GPIO_TRIGGER, True)
+    time.sleep(0.00001)
+    GPIO.output(GPIO_TRIGGER, False)
+
+    start = time.time()
+    while GPIO.input(GPIO_ECHO) == 0:
+        start = time.time()
+
+    while GPIO.input(GPIO_ECHO) == 1:
+        stop = time.time()
+
+    elapsed = stop - start
+    distance = (elapsed * 34300) / 2
+    return distance
+
+def measure_average():
+    distances = [measure() for _ in range(5)]
+    return sum(distances) / len(distances)
+
+def measure_height():
+    measurements = []
+    for _ in range(5):
+        height = 200 - measure_average()  # 센서 높이 200cm에서 측정된 거리를 뺌
+        measurements.append(height)
+        time.sleep(0.2)
+    
+    if max(measurements) - min(measurements) < 2:
+        return sum(measurements) / len(measurements)
+    else:
+        return None
+
+# MQTT 클라이언트 설정
+client = mqtt.Client()
+client.on_connect = on_connect
+client.on_message = on_message
+
+client.connect(MQTT_BROKER, MQTT_PORT, 60)
+
+try:
+    # MQTT 클라이언트 루프 시작
+    client.loop_forever()
+finally:
+    # 종료 시 GPIO 정리
+    GPIO.cleanup()
