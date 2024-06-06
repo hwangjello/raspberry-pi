@@ -85,7 +85,11 @@ client.connect(MQTT_BROKER, MQTT_PORT, 60)
 
 try:
     # MQTT 클라이언트 루프 시작
+    print("Starting MQTT loop")
     client.loop_forever()
+except KeyboardInterrupt:
+    print("Exiting due to keyboard interrupt")
 finally:
     # 종료 시 GPIO 정리
+    print("Cleaning up GPIO")
     GPIO.cleanup()
