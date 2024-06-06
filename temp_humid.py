@@ -1,24 +1,52 @@
 import time
-import board
-import adafruit_dht
+import pigpio
 
-# DHT22 센서 설정
-dht_device = adafruit_dht.DHT22(board.D4)  # D4 핀 사용, 실제 연결된 핀으로 변경
+class DHT22:
+    def __init__(self, pi, gpio):
+        self.pi = pi
+        self.gpio = gpio
+        self.data = []
+        self._cb = None
+
+    def read(self):
+        self.pi.set_mode(self.gpio, pigpio.OUTPUT)
+        self.pi.write(self.gpio, pigpio.LOW)
+        time.sleep(0.018)
+        self.pi.set_mode(self.gpio, pigpio.INPUT)
+        
+        self.data = []
+        self._cb = self.pi.callback(self.gpio, pigpio.EITHER_EDGE, self._cbf)
+
+        time.sleep(0.2)
+        self._cb.cancel()
+        data = self.data
+
+        if len(data) != 84:
+            return None, None
+
+        bits = []
+        for i in range(2, len(data) - 1, 2):
+            bits.append(data[i+1] - data[i])
+
+        humidity = 0
+        temperature = 0
+
+        for i in range(16):
+            humidity += bits[i] << (15 - i)
+            temperature += bits[16 + i] << (15 - i)
+
+        return humidity / 10.0, temperature / 10.0
+
+    def _cbf(self, gpio, level, tick):
+        self.data.append(tick)
+
+pi = pigpio.pi()
+dht22 = DHT22(pi, 4)  # GPIO 4번 핀 사용
 
 while True:
-    try:
-        # 온도와 습도 읽기
-        temperature = dht_device.temperature
-        humidity = dht_device.humidity
-        
-        # 읽기 성공 여부 확인
-        if humidity is not None and temperature is not None:
-            print(f"Temperature: {temperature:.2f}C  Humidity: {humidity:.2f}%")
-        else:
-            print("Failed to retrieve data from humidity sensor")
-    
-    except RuntimeError as error:
-        # 읽기 오류 발생 시
-        print(f"Error reading from DHT22: {error.args[0]}")
-    
+    humidity, temperature = dht22.read()
+    if humidity is not None and temperature is not None:
+        print(f"Temperature: {temperature:.2f}C  Humidity: {humidity:.2f}%")
+    else:
+        print("Failed to retrieve data from humidity sensor")
     time.sleep(1)
